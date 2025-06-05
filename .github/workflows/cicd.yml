@@ -13,10 +13,6 @@ on:
       - '**/README.md'
   workflow_dispatch:
 
-env:
-  ## (NON più) IMAGE_NAME: ${{ github.repository }}
-  ## Invece di impostare direttamente IMAGE_NAME, lo ricaviamo in un passo successivo.
-
 jobs:
   ## define job to build and publish docker image
   build-and-push-docker-image:
