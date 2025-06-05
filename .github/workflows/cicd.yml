@@ -5,11 +5,10 @@ on:
     - cron: "0 2 * * *"   # every day at 02:00 UTC (≈ 04:00 Europe/Rome)
   workflow_dispatch:     # allows manual triggering from the Actions tab
 
+# We don’t need ENV for IMAGE_NAME here, because we’ll lowercase github.repository directly in the tag.
 env:
   # Registry where the image will be stored. If empty, Docker Hub is used.
   REGISTRY: ghcr.io
-  # Repository name in the format <owner>/<repo>, for example "yourusername/caddy-ovh-docker"
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
@@ -17,14 +16,14 @@ jobs:
 
     permissions:
       contents: read
-      packages: write    # needed in order to push to GitHub Container Registry
+      packages: write    # required in order to push to GitHub Container Registry
 
     steps:
       # 1) Check out the repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2) Log into the registry defined in REGISTRY
+      # 2) Log in to the registry defined in REGISTRY
       - name: Log in to registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3
         with:
@@ -41,12 +40,13 @@ jobs:
           echo "upstream=$UPSTREAM" >> $GITHUB_OUTPUT
 
       # 4) Get the version of Caddy already built in the "latest" image in our registry.
-      #    If the image does not exist, we set LOCAL="none" so the build will proceed.
+      #    If the image does not exist, set LOCAL="none" so the build will proceed.
       - name: Get existing Caddy version from local image
         id: local-version
         run: |
-          if docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest >/dev/null 2>&1; then
-            LOCAL=$(docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          IMAGE="${{ env.REGISTRY }}/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]'):latest"
+          if docker pull "$IMAGE" >/dev/null 2>&1; then
+            LOCAL=$(docker run --rm "$IMAGE" \
                      sh -c "caddy version" 2>/dev/null || echo "none")
           else
             LOCAL="none"
@@ -102,7 +102,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ toLower(github.repository) }}:latest
           # Optionally label the image with the Caddy version
           labels: |
             org.opencontainers.image.version=${{ steps.upstream-version.outputs.upstream }}
