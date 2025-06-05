@@ -13,32 +13,35 @@ on:
       - '**/README.md'
   workflow_dispatch:
 
+env:
+  # Non dichiariamo più IMAGE_NAME qui, lo calcoliamo in lowercase più avanti.
+
 jobs:
-  ## define job to build and publish docker image
   build-and-push-docker-image:
-    name: Build Docker image and push to DockerHub and GitHub Container Registry
+    name: Build Docker image and push to GitHub Container Registry
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      ## Used to complete the identity challenge with sigstore/fulcio when running outside of PRs.
+      # serve per l’identity challenge di sigstore/fulcio se necessario
       id-token: write
 
     steps:
-      # 1) Checkout repository
+      # 1) Checkout del codice
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2) Convert GITHUB_REPOSITORY to lowercase and save it in REPO_LC
+      # 2) Convertiamo GITHUB_REPOSITORY in minuscolo e lo salviamo in REPO_LC (senza includere virgolette)
       - name: Set lowercase repository name
         run: |
-          echo "REPO_LC=$(echo \"$GITHUB_REPOSITORY\" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          REPO_LOWER=$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')
+          echo "REPO_LC=$REPO_LOWER" >> $GITHUB_ENV
 
-      # 3) Setup Docker buildx
+      # 3) Setup di Docker Buildx
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
 
-      # 5) Login to GitHub Container Registry (skip on PRs)
+      # 4) Login a GitHub Container Registry (skippa nelle PR)
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -47,7 +50,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 6) Build and push Docker image
+      # 5) Build e push dell'immagine su GHCR (solo se non è una PR)
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v5
@@ -61,6 +64,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 7) Show image digest
+      # 6) Stampiamo il digest
       - name: Image digest
         run: echo ${{ steps.build-and-push.outputs.digest }}
