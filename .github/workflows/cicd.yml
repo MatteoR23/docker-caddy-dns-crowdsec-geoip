@@ -1,108 +1,75 @@
-name: CI/CD Caddy-OVH (push only if Caddy is updated)
+name: Docker Build and Publish
 
 on:
   schedule:
-    - cron: "0 2 * * *"   # every day at 02:00 UTC (≈ 04:00 Europe/Rome)
-  workflow_dispatch:     # allows manual triggering from the Actions tab
+    - cron: '37 7 * * *'
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - '**/README.md'
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - '**/README.md'
+  workflow_dispatch:
 
-# We don’t need ENV for IMAGE_NAME here, because we’ll lowercase github.repository directly in the tag.
 env:
-  # Registry where the image will be stored. If empty, Docker Hub is used.
-  REGISTRY: ghcr.io
+  ## github.repository as <account>/<repo>
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  ## define job to build and publish docker image
+  build-and-push-docker-image:
+    name: Build Docker image and push to DockerHub and Github Container Registry
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-      packages: write    # required in order to push to GitHub Container Registry
+      packages: write
+      ## This is used to complete the identity challenge
+      ## with sigstore/fulcio when running outside of PRs.
+      id-token: write
 
     steps:
-      # 1) Check out the repository
+      ## https://github.com/actions/checkout
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # 2) Log in to the registry defined in REGISTRY
-      - name: Log in to registry ${{ env.REGISTRY }}
+      ## https://github.com/docker/build-push-action
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      ## https://github.com/docker/login-action
+      # - name: Login to Docker Hub
+      #  if: github.event_name != 'pull_request'
+      #  uses: docker/login-action@v3
+      #  with:
+      #    username: ${{ secrets.DOCKERHUB_USERNAME }}
+      #    password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      ## https://github.com/docker/login-action
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3) Get the upstream Caddy version from the official "caddy:2" image
-      #    We run a container and execute "caddy version" to capture something like "v2.10.5"
-      - name: Get upstream Caddy version
-        id: upstream-version
-        run: |
-          UPSTREAM=$(docker run --rm caddy:2 sh -c "caddy version" | tr -d '\r\n')
-          echo "upstream=$UPSTREAM" >> $GITHUB_OUTPUT
-
-      # 4) Get the version of Caddy already built in the "latest" image in our registry.
-      #    If the image does not exist, set LOCAL="none" so the build will proceed.
-      - name: Get existing Caddy version from local image
-        id: local-version
-        run: |
-          IMAGE="${{ env.REGISTRY }}/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]'):latest"
-          if docker pull "$IMAGE" >/dev/null 2>&1; then
-            LOCAL=$(docker run --rm "$IMAGE" \
-                     sh -c "caddy version" 2>/dev/null || echo "none")
-          else
-            LOCAL="none"
-          fi
-          LOCAL=$(echo "$LOCAL" | tr -d '\r\n')
-          echo "local=$LOCAL" >> $GITHUB_OUTPUT
-
-      # 5) Compare the upstream and local versions. If they match, skip build and push.
-      - name: Compare upstream and local versions
-        id: check-update
-        run: |
-          echo "Upstream version: ${{ steps.upstream-version.outputs.upstream }}"
-          echo "Local version:    ${{ steps.local-version.outputs.local }}"
-          if [ "${{ steps.upstream-version.outputs.upstream }}" = "${{ steps.local-version.outputs.local }}" ]; then
-            echo "update-needed=false" >> $GITHUB_OUTPUT
-            echo "No update needed: skipping build and push"
-          else
-            echo "update-needed=true" >> $GITHUB_OUTPUT
-            echo "Caddy has changed or image does not exist: proceeding with build and push"
-          fi
-
-      # 6) (Optional) Set up Go and cache Go modules, only if an update is needed
-      - name: Set up Go and cache modules
-        if: steps.check-update.outputs.update-needed == 'true'
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21'
-
-      - name: Cache Go modules
-        if: steps.check-update.outputs.update-needed == 'true'
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
-      # 7) Install xcaddy and build Caddy with the OVH DNS plugin, only if update-needed=true
-      - name: Build Caddy with OVH plugin (xcaddy)
-        if: steps.check-update.outputs.update-needed == 'true'
-        run: |
-          # Install xcaddy
-          GO111MODULE=on go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          # Use xcaddy to compile Caddy with the OVH DNS provider module
-          xcaddy build --with github.com/caddy-dns/ovh
-
-      # 8) Build and push the Docker image, only if update-needed=true
+      ## https://github.com/docker/build-push-action
       - name: Build and push Docker image
-        if: steps.check-update.outputs.update-needed == 'true'
+        id: build-and-push
         uses: docker/build-push-action@v5
         with:
+          provenance: false
           context: .
-          push: true
+          platforms: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8
+          push: ${{ github.event_name != 'pull_request' }}
+          # tags: ${{ steps.meta.outputs.tags }}
+          # labels: ${{ steps.meta.outputs.labels }}
           tags: |
-            ${{ env.REGISTRY }}/${{ toLower(github.repository) }}:latest
-          # Optionally label the image with the Caddy version
-          labels: |
-            org.opencontainers.image.version=${{ steps.upstream-version.outputs.upstream }}
+            ghcr.io/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image digest
+        run: echo ${{ steps.build-and-push.outputs.digest }}
