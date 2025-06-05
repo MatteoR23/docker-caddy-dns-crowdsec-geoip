@@ -1,3 +1,5 @@
+[![Docker Build and Publish](https://github.com/MatteoR23/docker-caddy-dns/actions/workflows/cicd.yml/badge.svg)](https://github.com/MatteoR23/docker-caddy-dns/actions/workflows/cicd.yml)
+
 # docker-caddy-dns
 
 Forked version from [rom4nik/docker-caddy-dns](https://github.com/rom4nik/docker-caddy-dns)
