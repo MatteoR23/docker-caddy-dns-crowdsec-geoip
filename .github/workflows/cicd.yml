@@ -1,41 +1,108 @@
-name: CI/CD
+name: CI/CD Caddy-OVH (push only if Caddy is updated)
 
 on:
-  push:
-    tags: [ 'v*' ]
+  schedule:
+    - cron: "0 2 * * *"   # every day at 02:00 UTC (≈ 04:00 Europe/Rome)
+  workflow_dispatch:     # allows manual triggering from the Actions tab
 
 env:
-  # Use docker.io for Docker Hub if empty
+  # Registry where the image will be stored. If empty, Docker Hub is used.
   REGISTRY: ghcr.io
-  # github.repository as <account>/<repo>
+  # Repository name in the format <owner>/<repo>, for example "yourusername/caddy-ovh-docker"
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
-      packages: write
+      packages: write    # needed in order to push to GitHub Container Registry
 
     steps:
+      # 1) Check out the repository
       - name: Checkout repository
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4
-      - name: Log into registry ${{ env.REGISTRY }}
+        uses: actions/checkout@v3
+
+      # 2) Log into the registry defined in REGISTRY
+      - name: Log in to registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
+
+      # 3) Get the upstream Caddy version from the official "caddy:2" image
+      #    We run a container and execute "caddy version" to capture something like "v2.10.5"
+      - name: Get upstream Caddy version
+        id: upstream-version
+        run: |
+          UPSTREAM=$(docker run --rm caddy:2 sh -c "caddy version" | tr -d '\r\n')
+          echo "upstream=$UPSTREAM" >> $GITHUB_OUTPUT
+
+      # 4) Get the version of Caddy already built in the "latest" image in our registry.
+      #    If the image does not exist, we set LOCAL="none" so the build will proceed.
+      - name: Get existing Caddy version from local image
+        id: local-version
+        run: |
+          if docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest >/dev/null 2>&1; then
+            LOCAL=$(docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+                     sh -c "caddy version" 2>/dev/null || echo "none")
+          else
+            LOCAL="none"
+          fi
+          LOCAL=$(echo "$LOCAL" | tr -d '\r\n')
+          echo "local=$LOCAL" >> $GITHUB_OUTPUT
+
+      # 5) Compare the upstream and local versions. If they match, skip build and push.
+      - name: Compare upstream and local versions
+        id: check-update
+        run: |
+          echo "Upstream version: ${{ steps.upstream-version.outputs.upstream }}"
+          echo "Local version:    ${{ steps.local-version.outputs.local }}"
+          if [ "${{ steps.upstream-version.outputs.upstream }}" = "${{ steps.local-version.outputs.local }}" ]; then
+            echo "update-needed=false" >> $GITHUB_OUTPUT
+            echo "No update needed: skipping build and push"
+          else
+            echo "update-needed=true" >> $GITHUB_OUTPUT
+            echo "Caddy has changed or image does not exist: proceeding with build and push"
+          fi
+
+      # 6) (Optional) Set up Go and cache Go modules, only if an update is needed
+      - name: Set up Go and cache modules
+        if: steps.check-update.outputs.update-needed == 'true'
+        uses: actions/setup-go@v4
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        if: steps.check-update.outputs.update-needed == 'true'
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      # 7) Install xcaddy and build Caddy with the OVH DNS plugin, only if update-needed=true
+      - name: Build Caddy with OVH plugin (xcaddy)
+        if: steps.check-update.outputs.update-needed == 'true'
+        run: |
+          # Install xcaddy
+          GO111MODULE=on go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          # Use xcaddy to compile Caddy with the OVH DNS provider module
+          xcaddy build --with github.com/caddy-dns/ovh
+
+      # 8) Build and push the Docker image, only if update-needed=true
       - name: Build and push Docker image
-        id: build-and-push
+        if: steps.check-update.outputs.update-needed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # Optionally label the image with the Caddy version
+          labels: |
+            org.opencontainers.image.version=${{ steps.upstream-version.outputs.upstream }}
