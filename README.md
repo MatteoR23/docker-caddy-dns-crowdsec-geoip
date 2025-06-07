@@ -1,6 +1,6 @@
 [![Docker Build and Publish](https://github.com/MatteoR23/docker-caddy-ovh-crowdsec-geoip/actions/workflows/cicd.yml/badge.svg)](https://github.com/MatteoR23/docker-caddy-ovh-crowdsec-geoip/actions/workflows/cicd.yml)
 
-# docker-caddy-dns
+# docker-caddy-ovh-crowdsec-geoip
 
 Forked version from [rom4nik/docker-caddy-dns](https://github.com/rom4nik/docker-caddy-dns)
 
