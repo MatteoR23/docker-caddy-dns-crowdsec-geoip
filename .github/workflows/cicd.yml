@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '37 7 * * *'
   workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build and push the Docker image'
+        required: false
+        default: 'false'
 
 jobs:
   # Gets the Caddy version on the Dockerfile, compares it the current version. 
@@ -103,8 +108,9 @@ jobs:
       # Used for the sigstore/fulcio identity challenge if needed
       id-token: write
     needs: check-caddy-version
-    if: needs.check-caddy-version.outputs.updated == 'true'
-
+    if: needs.check-caddy-version.outputs.updated == 'true' || github.event_name == 'workflow_dispatch' && github.event.inputs.force_build == 'true'
+    outputs:
+      digest: ${{ steps.build-and-push.outputs.digest }}
     steps:
       # 1) Checkout repository
       - name: Checkout repository
