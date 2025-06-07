@@ -3,17 +3,97 @@ name: Docker Build and Publish
 on:
   schedule:
     - cron: '37 7 * * *'
-  push:
-    branches: [ "main" ]
-    paths-ignore:
-      - '**/README.md'
-  pull_request:
-    branches: [ "main" ]
-    paths-ignore:
-      - '**/README.md'
   workflow_dispatch:
 
 jobs:
+  # Gets the Caddy version on the Dockerfile, compares it the current version. 
+  # If the version is not the latest, change the Dockerfile to the latest version.
+  # The same is applied to the plugins, if they are not the latest, change the Dockerfile to the latest version.
+  # If the Dockerfile was updated, build and push the Docker image to GitHub Container Registry.
+  # If the Dockerfile was not updated, stop the workflow.
+  check-caddy-version:
+    name: Check Caddy and plugin versions
+    runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.compare-versions.outputs.updated }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Get current versions from Dockerfile
+      - name: Get current versions from Dockerfile
+        id: get-current-versions
+        run: |
+          CURRENT_CADDY_VERSION=$(grep -oP '(?<=ARG CADDY_VERSION=)[^ ]+' Dockerfile)
+          CURRENT_OVH_DNS_VERSION=$(grep -oP '(?<=ARG OVH_DNS_VERSION=)[^ ]+' Dockerfile)
+          CURRENT_CROWDSEC_BOUNCER_VERSION=$(grep -oP '(?<=ARG CROWDSEC_BOUNCER_VERSION=)[^ ]+' Dockerfile)
+          CURRENT_MAXMIND_GEOIP_VERSION=$(grep -oP '(?<=ARG MAXMIND_GEOIP_VERSION=)[^ ]+' Dockerfile)
+          echo "CURRENT_CADDY_VERSION=$CURRENT_CADDY_VERSION" >> $GITHUB_ENV
+          echo "CURRENT_OVH_DNS_VERSION=$CURRENT_OVH_DNS_VERSION" >> $GITHUB_ENV
+          echo "CURRENT_CROWDSEC_BOUNCER_VERSION=$CURRENT_CROWDSEC_BOUNCER_VERSION" >> $GITHUB_ENV
+          echo "CURRENT_MAXMIND_GEOIP_VERSION=$CURRENT_MAXMIND_GEOIP_VERSION" >> $GITHUB_ENV
+
+      # Get latest versions from GitHub
+      - name: Get latest versions
+        id: get-latest-versions
+        run: |
+          LATEST_CADDY_VERSION=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          LATEST_CADDY_VERSION=${LATEST_CADDY_VERSION#v}
+          LATEST_OVH_DNS_VERSION=$(curl -s https://api.github.com/repos/caddy-dns/ovh/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          LATEST_OVH_DNS_VERSION=${LATEST_OVH_DNS_VERSION#v}
+          LATEST_CROWDSEC_BOUNCER_VERSION=$(curl -s https://api.github.com/repos/hslatman/caddy-crowdsec-bouncer/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          LATEST_CROWDSEC_BOUNCER_VERSION=${LATEST_CROWDSEC_BOUNCER_VERSION#v}
+          LATEST_MAXMIND_GEOIP_VERSION=$(curl -s https://api.github.com/repos/porech/caddy-maxmind-geolocation/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          LATEST_MAXMIND_GEOIP_VERSION=${LATEST_MAXMIND_GEOIP_VERSION#v}
+          echo "LATEST_CADDY_VERSION=$LATEST_CADDY_VERSION" >> $GITHUB_ENV
+          echo "LATEST_OVH_DNS_VERSION=$LATEST_OVH_DNS_VERSION" >> $GITHUB_ENV
+          echo "LATEST_CROWDSEC_BOUNCER_VERSION=$LATEST_CROWDSEC_BOUNCER_VERSION" >> $GITHUB_ENV
+          echo "LATEST_MAXMIND_GEOIP_VERSION=$LATEST_MAXMIND_GEOIP_VERSION" >> $GITHUB_ENV
+
+      # Compare and update Dockerfile if needed
+      - name: Compare versions and update Dockerfile if needed
+        id: compare-versions
+        run: |
+          source $GITHUB_ENV
+          UPDATED=false
+          if [ "$CURRENT_CADDY_VERSION" != "$LATEST_CADDY_VERSION" ]; then
+            sed -i "s/ARG CADDY_VERSION=$CURRENT_CADDY_VERSION/ARG CADDY_VERSION=$LATEST_CADDY_VERSION/" Dockerfile
+            UPDATED=true
+          fi
+          if [ "$CURRENT_OVH_DNS_VERSION" != "$LATEST_OVH_DNS_VERSION" ]; then
+            sed -i "s/ARG OVH_DNS_VERSION=$CURRENT_OVH_DNS_VERSION/ARG OVH_DNS_VERSION=$LATEST_OVH_DNS_VERSION/" Dockerfile
+            UPDATED=true
+          fi
+          if [ "$CURRENT_CROWDSEC_BOUNCER_VERSION" != "$LATEST_CROWDSEC_BOUNCER_VERSION" ]; then
+            sed -i "s/ARG CROWDSEC_BOUNCER_VERSION=$CURRENT_CROWDSEC_BOUNCER_VERSION/ARG CROWDSEC_BOUNCER_VERSION=$LATEST_CROWDSEC_BOUNCER_VERSION/" Dockerfile
+            UPDATED=true
+          fi
+          if [ "$CURRENT_MAXMIND_GEOIP_VERSION" != "$LATEST_MAXMIND_GEOIP_VERSION" ]; then
+            sed -i "s/ARG MAXMIND_GEOIP_VERSION=$CURRENT_MAXMIND_GEOIP_VERSION/ARG MAXMIND_GEOIP_VERSION=$LATEST_MAXMIND_GEOIP_VERSION/" Dockerfile
+            UPDATED=true
+          fi
+          if [ "$UPDATED" = true ]; then
+            echo "updated=true" >> $GITHUB_ENV
+            echo "updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "updated=false" >> $GITHUB_ENV
+            echo "updated=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit changes if Dockerfile was updated
+        if: steps.compare-versions.outputs.updated == 'true'
+        run: |
+          source $GITHUB_ENV
+          if [ "$(git status --porcelain)" ]; then
+            git config --local user.email "actions@github.com"
+            git config --local user.name "GitHub Actions"
+            git add Dockerfile
+            git commit -m "Update Dockerfile to latest Caddy/plugins: Caddy $LATEST_CADDY_VERSION, OVH $LATEST_OVH_DNS_VERSION, Crowdsec $LATEST_CROWDSEC_BOUNCER_VERSION, MaxMind $LATEST_MAXMIND_GEOIP_VERSION"
+            git push
+          else
+            echo "No changes to Dockerfile, nothing to commit"
+          fi  
+
   build-and-push-docker-image:
     name: Build Docker image and push to GitHub Container Registry
     runs-on: ubuntu-latest
@@ -22,6 +102,8 @@ jobs:
       packages: write
       # Used for the sigstore/fulcio identity challenge if needed
       id-token: write
+    needs: check-caddy-version
+    if: needs.check-caddy-version.outputs.updated == 'true'
 
     steps:
       # 1) Checkout repository
@@ -51,11 +133,14 @@ jobs:
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v5
+        env:
+          REPO_LC: ${{ env.REPO_LC }}
         with:
           provenance: false
           context: .
           platforms: linux/amd64,linux/arm64/v8
           push: ${{ github.event_name != 'pull_request' }}
+          file: Dockerfile
           tags: |
             ghcr.io/${{ env.REPO_LC }}:latest
           cache-from: type=gha
