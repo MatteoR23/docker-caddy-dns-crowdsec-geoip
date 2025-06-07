@@ -9,7 +9,7 @@ Docker image containing [Caddy reverse proxy](https://caddyserver.com/) built wi
 GitHub Actions is used to ensure quick updates when upstream releases a new version.
 
 ## How to use
-Follow [documentation](https://hub.docker.com/_/caddy) for official Docker image, replacing `caddy:<version>` with `ghcr.io/MatteoR23/docker-caddy-dns:<version>` (or `:latest`). While writing Caddyfile, enable the DNS challenge by following [those steps](https://caddy.community/t/how-to-use-dns-provider-modules-in-caddy-2/8148#enabling-the-dns-challenge-5).
+Follow [documentation](https://hub.docker.com/_/caddy) for official Docker image, replacing `caddy:<version>` with `ghcr.io/matteor23/docker-caddy-dns:<version>` (or `:latest`). While writing Caddyfile, enable the DNS challenge by following [those steps](https://caddy.community/t/how-to-use-dns-provider-modules-in-caddy-2/8148#enabling-the-dns-challenge-5).
 
 ## Thanks
 Thank you to rom4nik, who originally created this repository
