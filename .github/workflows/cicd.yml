@@ -9,7 +9,10 @@ on:
         description: 'Force build and push the Docker image'
         required: false
         default: 'false'
-
+      force_git_update:
+        description: 'Force update the repo (for testing purposes)'
+        required: false
+        default: 'false'
 jobs:
   # Gets the Caddy version on the Dockerfile, compares it the current version. 
   # If the version is not the latest, change the Dockerfile to the latest version.
@@ -24,6 +27,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        
 
       # Get current versions from Dockerfile
       - name: Get current versions from Dockerfile
@@ -44,17 +48,21 @@ jobs:
       - name: Get latest versions
         id: get-latest-versions
         run: |
-          LATEST_CADDY_VERSION=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          # Get latest tag for Caddy
+          LATEST_CADDY_VERSION=$(curl -s https://api.github.com/repos/caddyserver/caddy/tags | grep -oP '"name": "\K(.*)(?=")' | head -n1)
           LATEST_CADDY_VERSION=${LATEST_CADDY_VERSION#v}
-          LATEST_OVH_DNS_VERSION=$(curl -s https://api.github.com/repos/caddy-dns/ovh/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          # Get latest tag for OVH DNS
+          LATEST_OVH_DNS_VERSION=$(curl -s https://api.github.com/repos/caddy-dns/ovh/tags | grep -oP '"name": "\K(.*)(?=")' | head -n1)
           LATEST_OVH_DNS_VERSION=${LATEST_OVH_DNS_VERSION#v}
-          LATEST_CROWDSEC_BOUNCER_VERSION=$(curl -s https://api.github.com/repos/hslatman/caddy-crowdsec-bouncer/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          # Get latest tag for Crowdsec Bouncer
+          LATEST_CROWDSEC_BOUNCER_VERSION=$(curl -s https://api.github.com/repos/hslatman/caddy-crowdsec-bouncer/tags | grep -oP '"name": "\K(.*)(?=")' | head -n1)
           LATEST_CROWDSEC_BOUNCER_VERSION=${LATEST_CROWDSEC_BOUNCER_VERSION#v}
-          LATEST_MAXMIND_GEOIP_VERSION=$(curl -s https://api.github.com/repos/porech/caddy-maxmind-geolocation/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
+          # Get latest tag for MaxMind GeoIP
+          LATEST_MAXMIND_GEOIP_VERSION=$(curl -s https://api.github.com/repos/porech/caddy-maxmind-geolocation/tags | grep -oP '"name": "\K(.*)(?=")' | head -n1)
           LATEST_MAXMIND_GEOIP_VERSION=${LATEST_MAXMIND_GEOIP_VERSION#v}
-          echo "LATEST_CLOUDFLARE_VERSION=$(curl -s https://api.github.com/repos/caddy-dns/cloudflare/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')" >> $GITHUB_ENV
-          echo "LATEST_CLOUDFLARE_VERSION=${LATEST_CLOUDFLARE_VERSION#v}" >> $GITHUB_ENV
-
+          # Get latest tag for Cloudflare
+          LATEST_CLOUDFLARE_VERSION=$(curl -s https://api.github.com/repos/caddy-dns/cloudflare/tags | grep -oP '"name": "\K(.*)(?=")' | head -n1)
+          LATEST_CLOUDFLARE_VERSION=${LATEST_CLOUDFLARE_VERSION#v}
           echo "LATEST_CADDY_VERSION=$LATEST_CADDY_VERSION" >> $GITHUB_ENV
           echo "LATEST_OVH_DNS_VERSION=$LATEST_OVH_DNS_VERSION" >> $GITHUB_ENV
           echo "LATEST_CROWDSEC_BOUNCER_VERSION=$LATEST_CROWDSEC_BOUNCER_VERSION" >> $GITHUB_ENV
@@ -95,19 +103,28 @@ jobs:
             echo "updated=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit changes if Dockerfile was updated
-        if: steps.compare-versions.outputs.updated == 'true'
+      - name: "make a random change putting a random number to a test file (TODO: remove this step in the future)"
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.force_git_update == 'true'
         run: |
-          source $GITHUB_ENV
-          if [ "$(git status --porcelain)" ]; then
-            git config --local user.email "actions@github.com"
-            git config --local user.name "GitHub Actions"
-            git add Dockerfile
-            git commit -m "Update Dockerfile to latest Caddy/plugins: Caddy $LATEST_CADDY_VERSION, OVH $LATEST_OVH_DNS_VERSION, Crowdsec $LATEST_CROWDSEC_BOUNCER_VERSION, MaxMind $LATEST_MAXMIND_GEOIP_VERSION"
-            git push
-          else
-            echo "No changes to Dockerfile, nothing to commit"
-          fi  
+          echo "Random change to check if GitHub Actions can push changes"
+          echo "This is a test file to check if GitHub Actions can push changes" > git_test.txt
+          echo "This file contains a random number to ensure it changes every time" > git_test.txt
+          echo "Random number: $RANDOM" >> git_test.txt
+          echo "sed -i 's/updated=false/updated=true/' $GITHUB_ENV" > $GITHUB_ENV
+          echo "sed -i 's/updated=false/updated=true/' $GITHUB_OUTPUT" > $GITHUB_OUTPUT
+          echo "Check the GITHUB_ENV and GITHUB_OUTPUT variables"
+          echo "GITHUB_ENV:"
+          echo $GITHUB_ENV
+          echo "GITHUB_OUTPUT:"
+          echo $GITHUB_OUTPUT
+
+      - name: Commit & Push changes
+        uses: actions-js/push@master
+        if: steps.compare-versions.outputs.updated == 'true'
+        with:
+          branch: main
+          message: 'Update Dockerfile with latest Caddy and plugin versions'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
   build-and-push-docker-image:
     name: Build Docker image and push to GitHub Container Registry
@@ -118,7 +135,7 @@ jobs:
       # Used for the sigstore/fulcio identity challenge if needed
       id-token: write
     needs: check-caddy-version
-    if: needs.check-caddy-version.outputs.updated == 'true' || github.event_name == 'workflow_dispatch' && github.event.inputs.force_build == 'true'
+    if: needs.check-caddy-version.outputs.updated == 'true' || (github.event_name == 'workflow_dispatch' && github.event.inputs.force_build == 'true')
     outputs:
       digest: ${{ steps.build-and-push.outputs.digest }}
     steps:
@@ -165,3 +182,5 @@ jobs:
       # 6) Print the image digest
       - name: Image digest
         run: echo ${{ steps.build-and-push.outputs.digest }}
+
+
