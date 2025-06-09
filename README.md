@@ -4,7 +4,13 @@
 
 Forked version from [rom4nik/docker-caddy-dns](https://github.com/rom4nik/docker-caddy-dns)
 
-Docker image containing [Caddy reverse proxy](https://caddyserver.com/) built with addition of [GeoIP](https://github.com/porech/caddy-maxmind-geolocation), [Crowdsec](https://github.com/hslatman/caddy-crowdsec-bouncer) and [OVH](https://github.com/caddy-dns/ovh) DNS provider modules.
+Docker image containing [Caddy reverse proxy](https://caddyserver.com/) built with addition of the DNS Challange for the following providers:
+- [OVH](https://github.com/caddy-dns/ovh) 
+- [Cloudflare](https://github.com/caddy-dns/cloudflare)
+
+With the addition of:
+- [GeoIP](https://github.com/porech/caddy-maxmind-geolocation)
+- [Crowdsec](https://github.com/hslatman/caddy-crowdsec-bouncer) and  DNS provider modules.
 
 GitHub Actions is used to ensure quick updates when upstream releases a new version.
 

@@ -33,10 +33,12 @@ jobs:
           CURRENT_OVH_DNS_VERSION=$(grep -oP '(?<=ARG OVH_DNS_VERSION=)[^ ]+' Dockerfile)
           CURRENT_CROWDSEC_BOUNCER_VERSION=$(grep -oP '(?<=ARG CROWDSEC_BOUNCER_VERSION=)[^ ]+' Dockerfile)
           CURRENT_MAXMIND_GEOIP_VERSION=$(grep -oP '(?<=ARG MAXMIND_GEOIP_VERSION=)[^ ]+' Dockerfile)
+          CURRENT_CLOUDFLARE_VERSION=$(grep -oP '(?<=ARG CLOUDFLARE_VERSION=)[^ ]+' Dockerfile)
           echo "CURRENT_CADDY_VERSION=$CURRENT_CADDY_VERSION" >> $GITHUB_ENV
           echo "CURRENT_OVH_DNS_VERSION=$CURRENT_OVH_DNS_VERSION" >> $GITHUB_ENV
           echo "CURRENT_CROWDSEC_BOUNCER_VERSION=$CURRENT_CROWDSEC_BOUNCER_VERSION" >> $GITHUB_ENV
           echo "CURRENT_MAXMIND_GEOIP_VERSION=$CURRENT_MAXMIND_GEOIP_VERSION" >> $GITHUB_ENV
+          echo "CURRENT_CLOUDFLARE_VERSION=$CURRENT_CLOUDFLARE_VERSION" >> $GITHUB_ENV
 
       # Get latest versions from GitHub
       - name: Get latest versions
@@ -50,10 +52,14 @@ jobs:
           LATEST_CROWDSEC_BOUNCER_VERSION=${LATEST_CROWDSEC_BOUNCER_VERSION#v}
           LATEST_MAXMIND_GEOIP_VERSION=$(curl -s https://api.github.com/repos/porech/caddy-maxmind-geolocation/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
           LATEST_MAXMIND_GEOIP_VERSION=${LATEST_MAXMIND_GEOIP_VERSION#v}
+          echo "LATEST_CLOUDFLARE_VERSION=$(curl -s https://api.github.com/repos/caddy-dns/cloudflare/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')" >> $GITHUB_ENV
+          echo "LATEST_CLOUDFLARE_VERSION=${LATEST_CLOUDFLARE_VERSION#v}" >> $GITHUB_ENV
+
           echo "LATEST_CADDY_VERSION=$LATEST_CADDY_VERSION" >> $GITHUB_ENV
           echo "LATEST_OVH_DNS_VERSION=$LATEST_OVH_DNS_VERSION" >> $GITHUB_ENV
           echo "LATEST_CROWDSEC_BOUNCER_VERSION=$LATEST_CROWDSEC_BOUNCER_VERSION" >> $GITHUB_ENV
           echo "LATEST_MAXMIND_GEOIP_VERSION=$LATEST_MAXMIND_GEOIP_VERSION" >> $GITHUB_ENV
+          echo "LATEST_CLOUDFLARE_VERSION=$LATEST_CLOUDFLARE_VERSION" >> $GITHUB_ENV
 
       # Compare and update Dockerfile if needed
       - name: Compare versions and update Dockerfile if needed
@@ -75,6 +81,10 @@ jobs:
           fi
           if [ "$CURRENT_MAXMIND_GEOIP_VERSION" != "$LATEST_MAXMIND_GEOIP_VERSION" ]; then
             sed -i "s/ARG MAXMIND_GEOIP_VERSION=$CURRENT_MAXMIND_GEOIP_VERSION/ARG MAXMIND_GEOIP_VERSION=$LATEST_MAXMIND_GEOIP_VERSION/" Dockerfile
+            UPDATED=true
+          fi
+          if [ "$CURRENT_CLOUDFLARE_VERSION" != "$LATEST_CLOUDFLARE_VERSION" ]; then
+            sed -i "s/ARG CLOUDFLARE_VERSION=$CURRENT_CLOUDFLARE_VERSION/ARG CLOUDFLARE_VERSION=$LATEST_CLOUDFLARE_VERSION/" Dockerfile
             UPDATED=true
           fi
           if [ "$UPDATED" = true ]; then
