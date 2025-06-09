@@ -22,6 +22,10 @@ jobs:
   check-caddy-version:
     name: Check Caddy and plugin versions
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     outputs:
       updated: ${{ steps.compare-versions.outputs.updated }}
     steps:
@@ -124,7 +128,7 @@ jobs:
         with:
           branch: main
           message: 'Update Dockerfile with latest Caddy and plugin versions'
-          github_token: ${{ secrets.GH_PAT }}
+       
 
   build-and-push-docker-image:
     name: Build Docker image and push to GitHub Container Registry
