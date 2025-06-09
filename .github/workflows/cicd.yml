@@ -124,7 +124,7 @@ jobs:
         with:
           branch: main
           message: 'Update Dockerfile with latest Caddy and plugin versions'
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_PAT }}
 
   build-and-push-docker-image:
     name: Build Docker image and push to GitHub Container Registry
