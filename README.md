@@ -10,7 +10,7 @@ Docker image containing [Caddy reverse proxy](https://caddyserver.com/) built wi
 
 With the addition of:
 - [GeoIP](https://github.com/porech/caddy-maxmind-geolocation)
-- [Crowdsec](https://github.com/hslatman/caddy-crowdsec-bouncer) and  DNS provider modules.
+- [Crowdsec](https://github.com/hslatman/caddy-crowdsec-bouncer)
 
 GitHub Actions is used to ensure quick updates when upstream releases a new version.
 
