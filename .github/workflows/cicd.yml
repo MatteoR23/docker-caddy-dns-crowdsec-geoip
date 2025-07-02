@@ -183,6 +183,12 @@ jobs:
             ghcr.io/${{ env.REPO_LC }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            CADDY_VERSION=${{ env.CADDY_VERSION }}
+            OVH_DNS_VERSION=${{ env.OVH_DNS_VERSION }}
+            CROWDSEC_BOUNCER_VERSION=${{ env.CROWDSEC_BOUNCER_VERSION }}
+            MAXMIND_GEOIP_VERSION=${{ env.MAXMIND_GEOIP_VERSION }}
+            CLOUDFLARE_VERSION=${{ env.CLOUDFLARE_VERSION }}
 
       # 6) Print the image digest
       - name: Image digest
